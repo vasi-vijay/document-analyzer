@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.UUID;
@@ -12,8 +13,7 @@ import java.util.UUID;
 public class DocumentStorageService {
 	private final Path root;
 
-	public DocumentStorageService(@Value("${app.storage.root}") String root)
-			throws IOException {
+	public DocumentStorageService(@Value("${app.storage.root}") String root) throws IOException {
 		this.root = Paths.get(root).toAbsolutePath().normalize();
 		Files.createDirectories(this.root);
 	}
@@ -31,13 +31,19 @@ public class DocumentStorageService {
 			try {
 				Files.move(temp, destination, StandardCopyOption.ATOMIC_MOVE);
 			} catch (AtomicMoveNotSupportedException ex) {
-				Files.move(temp, destination,
-						StandardCopyOption.REPLACE_EXISTING);
+				Files.move(temp, destination, StandardCopyOption.REPLACE_EXISTING);
 			}
 			return key;
 		} finally {
 			Files.deleteIfExists(temp);
 		}
+	}
+
+	public InputStream open(String key) throws IOException {
+		Path path = root.resolve(key).normalize();
+		if (!path.getParent().equals(root))
+			throw new IOException("Invalid storage key");
+		return Files.newInputStream(path);
 	}
 
 	public void delete(String key) throws IOException {

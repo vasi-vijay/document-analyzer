@@ -2,13 +2,13 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: docanalyzer
+      POSTGRES_DB: vasivijay
       POSTGRES_USER: docanalyzer
-      POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-local-dev-only}
+      POSTGRES_PASSWORD: ${POSTGRE_DB_PASSWORD:?Set POSTGRE_DB_PASSWORD in .env}
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U docanalyzer -d docanalyzer"]
+      test: ["CMD-SHELL", "pg_isready -U docanalyzer -d vasivijay"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -46,14 +46,18 @@ services:
       SERVER_PORT: 8080
       APP_SECURITY_USERNAME: ${APP_SECURITY_USERNAME:-admin}
       APP_SECURITY_PASSWORD: ${APP_SECURITY_PASSWORD:?Set APP_SECURITY_PASSWORD in .env}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/docanalyzer
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/vasivijay
       SPRING_DATASOURCE_USERNAME: docanalyzer
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-local-dev-only}
+      POSTGRE_DB_PASSWORD: ${POSTGRE_DB_PASSWORD:?Set POSTGRE_DB_PASSWORD in .env}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       SPRING_DATA_REDIS_HOST: redis
       APP_STORAGE_ROOT: /app/var/documents
+      APP_AI_PROVIDER: ${APP_AI_PROVIDER:-ollama}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-local-disabled-key}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
     ports: ["8080:8080"]
 volumes:
   pgdata:

@@ -5,9 +5,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "documents", indexes = {
-		@Index(name = "idx_documents_owner_created", columnList = "owner_id,created_at"),
-		@Index(name = "idx_documents_checksum_owner", columnList = "owner_id,checksum")})
+@Table(name = "documents", indexes = { @Index(name = "idx_documents_owner_created", columnList = "owner_id,created_at"),
+		@Index(name = "idx_documents_checksum_owner", columnList = "owner_id,checksum") })
 public class DocumentRecord {
 	@Id
 	private UUID id;
@@ -40,9 +39,8 @@ public class DocumentRecord {
 	protected DocumentRecord() {
 	}
 
-	public DocumentRecord(UUID id, String ownerId, String originalFilename,
-			String detectedMediaType, long sizeBytes, String checksum,
-			String storageKey, DocumentStatus status, Instant createdAt) {
+	public DocumentRecord(UUID id, String ownerId, String originalFilename, String detectedMediaType, long sizeBytes,
+			String checksum, String storageKey, DocumentStatus status, Instant createdAt) {
 		this.id = id;
 		this.ownerId = ownerId;
 		this.originalFilename = originalFilename;
@@ -57,28 +55,40 @@ public class DocumentRecord {
 	public UUID getId() {
 		return id;
 	}
+
 	public String getOwnerId() {
 		return ownerId;
 	}
+
 	public String getOriginalFilename() {
 		return originalFilename;
 	}
+
 	public String getDetectedMediaType() {
 		return detectedMediaType;
 	}
+
 	public long getSizeBytes() {
 		return sizeBytes;
 	}
+
 	public String getChecksum() {
 		return checksum;
 	}
+
 	public String getStorageKey() {
 		return storageKey;
 	}
+
 	public DocumentStatus getStatus() {
 		return status;
 	}
+
 	public Instant getCreatedAt() {
 		return createdAt;
+	}
+
+	public void setStatus(DocumentStatus status) {
+		this.status = status;
 	}
 }

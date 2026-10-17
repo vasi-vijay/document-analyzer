@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import com.example.docanalyzer.ingestion.DocumentIngestionService;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,63 +19,53 @@ import java.util.UUID;
 
 @Service
 public class DocumentUploadService {
-	private static final Set<String> ALLOWED_TYPES = Set.of("application/pdf",
-			"application/msword",
-			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-			"application/vnd.ms-excel",
-			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-			"application/vnd.ms-powerpoint",
-			"application/vnd.openxmlformats-officedocument.presentationml.presentation",
-			"text/plain", "text/markdown", "text/csv", "text/html",
-			"application/json", "application/xml", "text/xml", "image/png",
-			"image/jpeg", "image/tiff", "image/bmp", "image/webp",
-			"message/rfc822");
+	private static final Set<String> ALLOWED_TYPES = Set.of("application/pdf", "application/msword",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint",
+			"application/vnd.openxmlformats-officedocument.presentationml.presentation", "text/plain", "text/markdown",
+			"text/csv", "text/html", "application/json", "application/xml", "text/xml", "image/png", "image/jpeg",
+			"image/tiff", "image/bmp", "image/webp", "message/rfc822");
 	private final DocumentRepository repository;
 	private final DocumentStorageService storage;
+	private final DocumentIngestionService ingestion;
 	private final Tika tika = new Tika();
 	private final long maxBytes;
 
-	public DocumentUploadService(DocumentRepository repository,
-			DocumentStorageService storage,
-			@Value("${app.upload.max-bytes}") long maxBytes) {
+	public DocumentUploadService(DocumentRepository repository, DocumentStorageService storage,
+			DocumentIngestionService ingestion, @Value("${app.upload.max-bytes}") long maxBytes) {
 		this.repository = repository;
 		this.storage = storage;
+		this.ingestion = ingestion;
 		this.maxBytes = maxBytes;
 	}
 
 	@Transactional
-	public DocumentResponse upload(String ownerId, MultipartFile file)
-			throws IOException {
+	public DocumentResponse upload(String ownerId, MultipartFile file) throws IOException {
 		if (file == null || file.isEmpty())
-			throw new UploadException("EMPTY_FILE",
-					"The uploaded file is empty.");
+			throw new UploadException("EMPTY_FILE", "The uploaded file is empty.");
 		if (file.getSize() > maxBytes)
-			throw new UploadException("FILE_TOO_LARGE",
-					"The file exceeds the configured upload limit.");
+			throw new UploadException("FILE_TOO_LARGE", "The file exceeds the configured upload limit.");
 		String original = sanitizeFilename(file.getOriginalFilename());
 		if (original.isBlank())
-			throw new UploadException("INVALID_FILENAME",
-					"A valid filename is required.");
+			throw new UploadException("INVALID_FILENAME", "A valid filename is required.");
 
 		String mediaType;
 		try (InputStream in = file.getInputStream()) {
 			mediaType = tika.detect(in, original).toLowerCase(Locale.ROOT);
 		} catch (RuntimeException ex) {
-			throw new UploadException("UNREADABLE_FILE",
-					"The file could not be inspected.");
+			throw new UploadException("UNREADABLE_FILE", "The file could not be inspected.");
 		}
 		if (!ALLOWED_TYPES.contains(mediaType)) {
-			throw new UploadException("UNSUPPORTED_FILE_TYPE",
-					"This file type is not supported: " + mediaType);
+			throw new UploadException("UNSUPPORTED_FILE_TYPE", "This file type is not supported: " + mediaType);
 		}
 
 		String checksum = sha256(file);
 		UUID id = UUID.randomUUID();
 		String storageKey = storage.store(id, file);
 		try {
-			DocumentRecord saved = repository.save(new DocumentRecord(id,
-					ownerId, original, mediaType, file.getSize(), checksum,
-					storageKey, DocumentStatus.UPLOADED, Instant.now()));
+			DocumentRecord saved = repository.save(new DocumentRecord(id, ownerId, original, mediaType, file.getSize(),
+					checksum, storageKey, DocumentStatus.PROCESSING, Instant.now()));
+			ingestion.ingest(saved);
 			return DocumentResponse.from(saved);
 		} catch (RuntimeException ex) {
 			storage.delete(storageKey);

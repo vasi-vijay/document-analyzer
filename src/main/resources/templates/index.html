@@ -1,44 +1,48 @@
 <!doctype html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Document Analyzer</title>
-<link
-	href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-	rel="stylesheet">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document Analyzer</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-body-tertiary">
-	<main class="container py-5" style="max-width: 850px">
-		<h1 class="mb-2">Document Analyzer</h1>
-		<p class="text-secondary">Secure upload foundation · AI question
-			answering is the next milestone.</p>
-		<div class="alert alert-info">Sign in with your configured
-			application credentials. Uploads are private to the authenticated
-			user.</div>
-		<form id="upload-form" class="card card-body mb-4">
-			<label for="file" class="form-label">Choose a supported
-				document</label> <input id="file" class="form-control mb-3" type="file"
-				required>
-			<button class="btn btn-primary align-self-start" type="submit">Upload
-				document</button>
-			<p id="message" class="mt-3 mb-0" role="status"></p>
-		</form>
-		<div class="card card-body">
-			<div class="d-flex justify-content-between align-items-center mb-3">
-				<h2 class="h5 mb-0">My documents</h2>
-				<button id="refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
-			</div>
-			<div id="documents" class="list-group"></div>
-		</div>
-	</main>
-	<script>
+<main class="container py-5" style="max-width: 850px">
+  <h1 class="mb-2">Document Analyzer</h1>
+  <p class="text-secondary">Upload documents and ask questions using your configured local or hosted AI model.</p>
+  <div class="alert alert-info">Sign in with your configured application credentials. Uploads are private to the authenticated user.</div>
+  <form id="upload-form" class="card card-body mb-4">
+    <label for="file" class="form-label">Choose a supported document</label>
+    <input id="file" class="form-control mb-3" type="file" required>
+    <button class="btn btn-primary align-self-start" type="submit">Upload document</button>
+    <p id="message" class="mt-3 mb-0" role="status"></p>
+  </form>
+  <form id="question-form" class="card card-body mb-4">
+    <h2 class="h5">Ask about your documents</h2>
+    <label for="question" class="form-label">Question</label>
+    <textarea id="question" class="form-control mb-3" rows="3" maxlength="4000" required placeholder="What are the main obligations in this agreement?"></textarea>
+    <label for="question-docs" class="form-label">Documents (select none to search all ready documents)</label>
+    <select id="question-docs" class="form-select mb-3" multiple size="4"></select>
+    <button class="btn btn-success align-self-start" type="submit">Ask question</button>
+    <div id="answer" class="mt-3" aria-live="polite"></div>
+  </form>
+  <div class="card card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="h5 mb-0">My documents</h2><button id="refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+    </div>
+    <div id="documents" class="list-group"></div>
+  </div>
+</main>
+<script>
 const message = document.getElementById('message');
 async function loadDocuments() {
   const response = await fetch('/api/v1/documents');
   if (response.status === 401) { message.textContent = 'Please sign in first, then refresh this page.'; return; }
   if (!response.ok) { message.textContent = 'Could not load documents.'; return; }
   const docs = await response.json();
+  const selector = document.getElementById('question-docs'); selector.replaceChildren();
+  for (const doc of docs.filter(d => d.status === 'READY')) {
+    const option = document.createElement('option'); option.value = doc.id; option.textContent = doc.filename; selector.append(option);
+  }
   const root = document.getElementById('documents'); root.replaceChildren();
   if (!docs.length) { root.textContent = 'No documents uploaded yet.'; return; }
   for (const doc of docs) {
@@ -59,6 +63,26 @@ document.getElementById('upload-form').addEventListener('submit', async (event) 
     message.textContent = response.ok ? `Uploaded ${body.filename} (${body.status}).` : (body.detail || body.message || `Upload failed (${response.status}).`);
     if (response.ok) { event.target.reset(); await loadDocuments(); }
   } catch (_) { message.textContent = 'Upload failed due to a network error. Please retry.'; }
+});
+document.getElementById('question-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const output = document.getElementById('answer'); output.textContent = 'Searching documents and asking the configured model…';
+  const question = document.getElementById('question').value.trim();
+  const documentIds = Array.from(document.getElementById('question-docs').selectedOptions).map(o => o.value);
+  try {
+    const response = await fetch('/api/v1/questions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({question, documentIds}) });
+    const body = await response.json().catch(() => ({}));
+    output.replaceChildren();
+    const status = document.createElement('p'); status.className = 'fw-semibold'; status.textContent = `${body.status || 'ERROR'} · provider: ${body.provider || 'n/a'}`; output.append(status);
+    const answer = document.createElement('p'); answer.textContent = body.answer || body.detail || body.message || `Request failed (${response.status})`; output.append(answer);
+    for (const citation of (body.citations || [])) {
+      const item = document.createElement('div'); item.className = 'border rounded p-2 mb-2';
+      const heading = document.createElement('div'); heading.className = 'fw-semibold'; heading.textContent = `${citation.filename} · chunk ${citation.chunkIndex}`;
+      const excerpt = document.createElement('small'); excerpt.className = 'text-secondary'; excerpt.textContent = citation.excerpt;
+      item.append(heading, excerpt); output.append(item);
+    }
+    for (const limitation of (body.limitations || [])) { const p = document.createElement('p'); p.className = 'text-secondary'; p.textContent = limitation; output.append(p); }
+  } catch (_) { output.textContent = 'Question failed due to a network error. Please retry.'; }
 });
 document.getElementById('refresh').addEventListener('click', loadDocuments);
 loadDocuments();

@@ -1,5 +1,17 @@
-target/
-var/
-.env
-.DS_Store
 
+# Maven build output
+target/
+
+# Uploaded documents and runtime data
+var/documents/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# IDE files
+.idea/
+.classpath
+.project
+.settings/

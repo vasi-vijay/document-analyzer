@@ -13,39 +13,41 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/documents")
 public class DocumentController {
-    private final DocumentUploadService uploadService;
-    private final DocumentRepository repository;
-    private final DocumentStorageService storage;
+	private final DocumentUploadService uploadService;
+	private final DocumentRepository repository;
+	private final DocumentStorageService storage;
 
-    public DocumentController(DocumentUploadService uploadService, DocumentRepository repository,
-                              DocumentStorageService storage) {
-        this.uploadService = uploadService; this.repository = repository; this.storage = storage;
-    }
+	public DocumentController(DocumentUploadService uploadService, DocumentRepository repository,
+			DocumentStorageService storage) {
+		this.uploadService = uploadService;
+		this.repository = repository;
+		this.storage = storage;
+	}
 
-    @PostMapping(consumes = "multipart/form-data")
-    @ResponseStatus(HttpStatus.CREATED)
-    public DocumentResponse upload(@RequestPart("file") MultipartFile file, Authentication auth) throws IOException {
-        return uploadService.upload(auth.getName(), file);
-    }
+	@PostMapping(consumes = "multipart/form-data")
+	@ResponseStatus(HttpStatus.CREATED)
+	public DocumentResponse upload(@RequestPart("file") MultipartFile file, Authentication auth) throws IOException {
+		return uploadService.upload(auth.getName(), file);
+	}
 
-    @GetMapping
-    public List<DocumentResponse> list(Authentication auth) {
-        return repository.findAllByOwnerIdOrderByCreatedAtDesc(auth.getName()).stream()
-                .map(DocumentResponse::from).toList();
-    }
+	@GetMapping
+	public List<DocumentResponse> list(Authentication auth) {
+		return repository.findAllByOwnerIdOrderByCreatedAtDesc(auth.getName()).stream().map(DocumentResponse::from)
+				.toList();
+	}
 
-    @GetMapping("/{id}")
-    public DocumentResponse get(@PathVariable UUID id, Authentication auth) {
-        return repository.findByIdAndOwnerId(id, auth.getName()).map(DocumentResponse::from)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
-    }
+	@GetMapping("/{id}")
+	public DocumentResponse get(@PathVariable UUID id, Authentication auth) {
+		return repository.findByIdAndOwnerId(id, auth.getName()).map(DocumentResponse::from)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
+	}
 
-    @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable UUID id, Authentication auth) throws IOException {
-        DocumentRecord record = repository.findByIdAndOwnerId(id, auth.getName())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
-        storage.delete(record.getStorageKey());
-        repository.delete(record);
-    }
+	@DeleteMapping("/{id}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void delete(@PathVariable UUID id, Authentication auth) throws IOException {
+		DocumentRecord record = repository.findByIdAndOwnerId(id, auth.getName())
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
+		storage.delete(record.getStorageKey());
+		repository.delete(record);
+	}
 }
