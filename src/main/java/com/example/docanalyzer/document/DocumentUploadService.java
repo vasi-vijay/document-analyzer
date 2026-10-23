@@ -1,21 +1,21 @@
 package com.example.docanalyzer.document;
 
-import org.apache.tika.Tika;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
-import com.example.docanalyzer.ingestion.DocumentIngestionService;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
-import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+
+import org.apache.tika.Tika;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import com.example.docanalyzer.ingestion.DocumentIngestionService;
 
 @Service
 public class DocumentUploadService {
@@ -51,7 +51,7 @@ public class DocumentUploadService {
 
 		String mediaType;
 		try (InputStream in = file.getInputStream()) {
-			mediaType = tika.detect(in, original).toLowerCase(Locale.ROOT);
+			mediaType = DocumentFileValidator.validate(file);
 		} catch (RuntimeException ex) {
 			throw new UploadException("UNREADABLE_FILE", "The file could not be inspected.");
 		}
