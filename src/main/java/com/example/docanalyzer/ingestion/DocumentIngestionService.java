@@ -1,17 +1,5 @@
 package com.example.docanalyzer.ingestion;
 
-import com.example.docanalyzer.document.DocumentRecord;
-import com.example.docanalyzer.document.DocumentStatus;
-import com.example.docanalyzer.document.DocumentStorageService;
-import com.example.docanalyzer.document.DocumentRepository;
-import org.apache.tika.metadata.Metadata;
-import org.apache.tika.parser.AutoDetectParser;
-import org.apache.tika.parser.ParseContext;
-import org.apache.tika.sax.BodyContentHandler;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
@@ -19,8 +7,27 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.tika.metadata.Metadata;
+import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
+import org.apache.tika.sax.BodyContentHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.example.docanalyzer.document.DocumentRecord;
+import com.example.docanalyzer.document.DocumentRepository;
+import com.example.docanalyzer.document.DocumentStatus;
+import com.example.docanalyzer.document.DocumentStorageService;
+
 @Service
 public class DocumentIngestionService {
+	private static final Logger log = LoggerFactory.getLogger(DocumentIngestionService.class);
+
 	private final DocumentStorageService storage;
 	private final DocumentRepository documents;
 	private final DocumentChunkRepository chunks;
@@ -46,31 +53,73 @@ public class DocumentIngestionService {
 	public void ingest(DocumentRecord document) throws IOException {
 		try (InputStream input = storage.open(document.getStorageKey())) {
 			BodyContentHandler handler = new BodyContentHandler(maxExtractedChars);
-			try {
-				new AutoDetectParser().parse(input, handler, new Metadata(), new ParseContext());
-			} catch (org.xml.sax.SAXException limitOrParseError) {
-				// BodyContentHandler raises SAXException at its configured write limit. Keep
-				// the extracted prefix.
-				if (handler.toString().isBlank())
-					throw limitOrParseError;
+			Metadata metadata = new Metadata();
+			ParseContext context = new ParseContext();
+			byte[] header;
+			String text;
+			try (InputStream probe = storage.open(document.getStorageKey())) {
+				header = probe.readNBytes(16);
 			}
-			String text = handler.toString();
-			if (text == null || text.isBlank()) {
+
+			log.info("Ingestion probe: documentId={}, storageKey={}, headerHex={}", document.getId(),
+					document.getStorageKey(), java.util.HexFormat.of().formatHex(header));
+
+			if ("application/pdf".equals(document.getDetectedMediaType())) {
+				text = extractPdfText(input);
+			} else {
+				try {
+					new AutoDetectParser().parse(input, handler, metadata, context);
+				} catch (org.xml.sax.SAXException ex) {
+					// Do not silently treat every parsing exception as
+					// a content-limit exception.
+					if (handler.toString().isBlank() || !isContentLimitException(ex)) {
+						throw ex;
+					}
+					// Keep the extracted prefix when the output limit
+					// was reached.
+				}
+				text = handler.toString();
+			}
+
+			if (text.isBlank()) {
 				document.setStatus(DocumentStatus.FAILED);
 				documents.save(document);
 				return;
 			}
-			if (text.length() > maxExtractedChars)
+			if (text.length() > maxExtractedChars) {
 				text = text.substring(0, maxExtractedChars);
+			}
 			chunks.deleteAllByDocumentId(document.getId());
 			List<DocumentChunk> batch = split(document.getId(), text);
 			chunks.saveAll(batch);
 			document.setStatus(DocumentStatus.READY);
 			documents.save(document);
-		} catch (org.apache.tika.exception.TikaException | IOException | org.xml.sax.SAXException ex) {
+		} catch (IOException | org.apache.tika.exception.TikaException | org.xml.sax.SAXException
+				| RuntimeException ex) {
+			log.error("Document ingestion failed. documentId={}, storageKey={}", document.getId(),
+					document.getStorageKey(), ex);
 			document.setStatus(DocumentStatus.FAILED);
 			documents.save(document);
 		}
+	}
+
+	private String extractPdfText(InputStream input) throws IOException {
+		byte[] pdfBytes = input.readAllBytes();
+		try (var pdf = Loader.loadPDF(pdfBytes)) {
+			return new PDFTextStripper().getText(pdf);
+		}
+	}
+
+	private boolean isContentLimitException(org.xml.sax.SAXException ex) {
+		Throwable cause = ex;
+		while (cause != null) {
+			String message = cause.getMessage();
+			if (message != null && message.toLowerCase(java.util.Locale.ROOT).contains("write limit")) {
+				return true;
+			}
+			cause = cause.getCause();
+		}
+		return false;
 	}
 
 	List<DocumentChunk> split(UUID documentId, String text) {
